@@ -39,6 +39,9 @@ local lastGroundedState = false
 local landingCooldown = 0
 local jumpCooldown = 0
 
+-- Minimize Variables
+local isMinimized = false
+
 -- GUI Setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoWalkGUI"
@@ -61,13 +64,25 @@ titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -40, 1, 0)
+title.Size = UDim2.new(1, -70, 1, 0)
 title.BackgroundTransparency = 1
 title.Text = "Auto Walk System"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 18
 title.Font = Enum.Font.GothamBold
 title.Parent = titleBar
+
+-- Minimize Button
+local minimizeButton = Instance.new("TextButton")
+minimizeButton.Size = UDim2.new(0, 30, 0, 30)
+minimizeButton.Position = UDim2.new(1, -67, 0, 2.5)
+minimizeButton.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+minimizeButton.BorderSizePixel = 0
+minimizeButton.Text = "−"
+minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeButton.TextSize = 20
+minimizeButton.Font = Enum.Font.GothamBold
+minimizeButton.Parent = titleBar
 
 local closeButton = Instance.new("TextButton")
 closeButton.Size = UDim2.new(0, 30, 0, 30)
@@ -115,6 +130,33 @@ RunService.Heartbeat:Connect(function()
         )
     end
 end)
+
+-- Minimize/Maximize Function
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    
+    if isMinimized then
+        mainFrame:TweenSize(
+            UDim2.new(0, 300, 0, 35),
+            Enum.EasingDirection.Out,
+            Enum.EasingStyle.Quad,
+            0.3,
+            true
+        )
+        minimizeButton.Text = "+"
+    else
+        mainFrame:TweenSize(
+            UDim2.new(0, 300, 0, 400),
+            Enum.EasingDirection.Out,
+            Enum.EasingStyle.Quad,
+            0.3,
+            true
+        )
+        minimizeButton.Text = "−"
+    end
+end
+
+minimizeButton.MouseButton1Click:Connect(toggleMinimize)
 
 local controlFrame = Instance.new("Frame")
 controlFrame.Size = UDim2.new(1, -20, 0, 180)
@@ -444,7 +486,6 @@ local function stopPlayback()
     
     if character and humanoid then
         humanoid:Move(Vector3.new(0, 0, 0), false)
-        -- Reset to normal walking state
         if humanoid:GetState() ~= Enum.HumanoidStateType.Running and 
            humanoid:GetState() ~= Enum.HumanoidStateType.RunningNoPhysics then
             humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -475,7 +516,6 @@ local function startPlayback(data)
     
     enableGodMode()
     
-    -- Instant teleport to start position
     if character and character:FindFirstChild("HumanoidRootPart") and data[1] then
         local firstFrame = data[1]
         local startPos = tableToVec(firstFrame.position)
@@ -510,7 +550,6 @@ local function startPlayback(data)
         playbackConnection = nil
     end
     
-    -- Use Heartbeat for more consistent timing across different FPS
     playbackConnection = RunService.Heartbeat:Connect(function(deltaTime)
         if not isPlaying then return end
         if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -518,7 +557,6 @@ local function startPlayback(data)
             humanoid = character:FindFirstChild("Humanoid")
         end
         
-        -- Decrease cooldowns
         if landingCooldown > 0 then
             landingCooldown = landingCooldown - deltaTime
         end
@@ -526,12 +564,10 @@ local function startPlayback(data)
             jumpCooldown = jumpCooldown - deltaTime
         end
         
-        -- FPS-independent time tracking using deltaTime
         local currentTime = tick()
         local actualDelta = currentTime - lastPlaybackTime
         lastPlaybackTime = currentTime
         
-        -- Clamp delta to prevent huge jumps on lag spikes
         actualDelta = math.min(actualDelta, 0.1)
         accumulatedTime = accumulatedTime + actualDelta
         
@@ -569,7 +605,6 @@ local function startPlayback(data)
         local state0 = f0.state or "Running"
         local state1 = f1.state or "Running"
         
-        -- Smooth interpolation
         local interpPos = lerpVector(pos0, pos1, alpha)
         local interpVel = lerpVector(vel0, vel1, alpha)
         local interpMove = lerpVector(move0, move1, alpha)
@@ -578,25 +613,19 @@ local function startPlayback(data)
         local hrp = character.HumanoidRootPart
         local targetCFrame = CFrame.new(interpPos) * CFrame.Angles(0, interpYaw, 0)
         
-        -- Detect if we're supposed to be grounded based on state
         local shouldBeGrounded = (state0 == "Running" or state0 == "RunningNoPhysics" or state0 == "Landed") and
                                   (state1 == "Running" or state1 == "RunningNoPhysics" or state1 == "Landed")
         
-        -- Check actual ground proximity
         local nearGround, groundPos = isNearGround(interpPos, 4)
         
-        -- Improved position update with ground snapping
         if shouldBeGrounded and nearGround and landingCooldown <= 0 then
-            -- Snap to ground when we should be grounded
             local lerpFactor = math.clamp(1 - math.exp(-15 * actualDelta), 0, 1)
             hrp.CFrame = hrp.CFrame:Lerp(targetCFrame, lerpFactor)
             
-            -- Nullify Y velocity when grounded
             if interpVel.Y < 0 then
                 interpVel = Vector3.new(interpVel.X, 0, interpVel.Z)
             end
             
-            -- Force grounded state if needed
             if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
                 humanoid:ChangeState(Enum.HumanoidStateType.Landed)
                 task.wait()
@@ -605,21 +634,17 @@ local function startPlayback(data)
             
             lastGroundedState = true
         else
-            -- Normal interpolation when in air
             local lerpFactor = math.clamp(1 - math.exp(-12 * actualDelta), 0, 1)
             hrp.CFrame = hrp.CFrame:Lerp(targetCFrame, lerpFactor)
             lastGroundedState = false
         end
         
-        -- Apply velocity with improved Y handling
         pcall(function()
             local currentVel = hrp.AssemblyLinearVelocity
-            -- Smooth Y velocity to prevent jittering
             local smoothedYVel = lerp(currentVel.Y, interpVel.Y, 0.7)
             
-            -- Detect landing
             if lastYVelocity < -5 and smoothedYVel > -2 and nearGround then
-                landingCooldown = 0.3 -- Cooldown after landing
+                landingCooldown = 0.3
                 smoothedYVel = 0
                 if humanoid:GetState() ~= Enum.HumanoidStateType.Running then
                     humanoid:ChangeState(Enum.HumanoidStateType.Landed)
@@ -636,13 +661,11 @@ local function startPlayback(data)
             humanoid:Move(interpMove, false)
         end
         
-        -- Improved jump handling
         local jumpingNow = f0.jumping or false
         if f1.jumping then
             jumpingNow = true
         end
         
-        -- Only trigger jump if not recently jumped and currently grounded
         if jumpingNow and not lastJumping and jumpCooldown <= 0 then
             local currentState = humanoid:GetState()
             if currentState == Enum.HumanoidStateType.Running or 
@@ -650,7 +673,7 @@ local function startPlayback(data)
                currentState == Enum.HumanoidStateType.Landed or
                nearGround then
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                jumpCooldown = 0.5 -- Prevent double jumping
+                jumpCooldown = 0.5
             end
         end
         lastJumping = jumpingNow
@@ -774,7 +797,6 @@ RunService.Heartbeat:Connect(function()
         local currentTime = tick() - recordingStartTime
         local _, y, _ = hrp.CFrame:ToOrientation()
         
-        -- Get current humanoid state as string for better tracking
         local currentState = hum:GetState()
         local stateString = "Running"
         
@@ -797,7 +819,7 @@ RunService.Heartbeat:Connect(function()
             velocity = vecToTable(hrp.AssemblyLinearVelocity),
             moveDirection = vecToTable(hum.MoveDirection),
             jumping = currentState == Enum.HumanoidStateType.Jumping,
-            state = stateString, -- Added state tracking
+            state = stateString,
         }
         
         table.insert(recordedData, frameData)
